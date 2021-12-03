@@ -286,8 +286,8 @@ class VarFiber:
                         
                         return (2 * np.real(Er * np.conj(Hp))  - 2 * np.real(np.conj(Hr) * Ep)) * r
                     
-                    res1 = quad(func, 0+eps, a-eps,  epsrel = 1e-12)
-                    res2 = quad(func, a+eps, np.inf, epsrel = 1e-12)
+                    res1 = quad(func, 0+eps, a-eps,  epsrel = 1e-12, epsabs = 1e-11)
+                    res2 = quad(func, a+eps, np.inf, epsrel = 1e-12, epsabs = 1e-11)
                     
                     #print(res1,res2)
                     N[ia,iW, iM] = 2 * np.pi * (res1[0] + res2[0])
@@ -348,7 +348,6 @@ class VarFiber:
                                                     self.n1(W), self.n2(W), 
                                                     k0, M)
                         Ef = np.array([Er[0], Ep[0], Ez[0]])
-                        
                         return (np.linalg.norm(np.conj(Ef)))**4 * r
                     
                     def func3(r):
@@ -361,14 +360,14 @@ class VarFiber:
                         Efc = np.conj(Ef)
                         return Efc.dot(Efc) * (Ef.dot(Ef)) * r
                     
-                    res1 = quad(func1, 0+eps, a-eps,  epsrel = 1e-12)
-                    res2 = quad(func1, a+eps, np.inf, epsrel = 1e-12)
+                    res1 = quad(func1, 0+eps, a-eps,  epsrel = 1e-12,epsabs = 1e-10)
+                    res2 = quad(func1, a+eps, np.inf, epsrel = 1e-12,epsabs = 1e-10)
                     
-                    res3 = quad(func2, 0+eps, a-eps,  epsrel = 1e-12)
-                    res4 = quad(func2, a+eps, np.inf, epsrel = 1e-12)
+                    res3 = quad(func2, 0+eps, a-eps,  epsrel = 1e-12,epsabs = 1e-10)
+                    res4 = quad(func2, a+eps, np.inf, epsrel = 1e-12,epsabs = 1e-10)
                     
-                    res5 = quad(func3, 0+eps, a-eps,  epsrel = 1e-12)
-                    res6 = quad(func3, a+eps, np.inf, epsrel = 1e-12)
+                    res5 = quad(func3, 0+eps, a-eps,  epsrel = 1e-12,epsabs = 1e-10)
+                    res6 = quad(func3, a+eps, np.inf, epsrel = 1e-12,epsabs = 1e-10)
                     
                     Vo = (res1[0] + res2[0])
                     
@@ -378,7 +377,7 @@ class VarFiber:
                     else:
                         Vu = res3[0] 
                         Vu2= res5[0]
-                    
+                    print('Acc error: ', res1[1]+res2[1]+res3[1]+res4[1]+res5[1]+res6[1])                    
                     n_avg = (n1 + n2)/2
                     tal = mu0 * 2 * np.pi/(n_avg**2 * ep0 )
                     A_eff1[ia, iW, iM] = tal * Vo / Vu
@@ -417,8 +416,13 @@ class VarFiber:
         assert shift_idx!=0
         assert shift_idx!=len(betas[0,:,0])-1
         ###### Another Beta????
-        offset =      diff_b_dw[radius_idx, shift_idx] * (self.Calced_Freq - self.Calced_Freq[shift_idx])
-        offset =      offset[np.newaxis,:, np.newaxis]
+        offset  = betas[radius_idx, shift_idx,0]  + diff_b_dw[radius_idx, shift_idx] * (self.Calced_Freq - self.Calced_Freq[shift_idx])
+        offset  = offset[np.newaxis,:, np.newaxis]
+        _uval   = betas[radius_idx, shift_idx-1:shift_idx+2,0]
+        _dw = self.Calced_Freq[1]-self.Calced_Freq[0]
+        _beta_2 = (_uval*np.array([1,-2,1])/(_dw**2)).sum()
+        self.BETA_2 = _beta_2
+        self.BETA_0 = betas[radius_idx, shift_idx,0]
         
         self.W0   = self.Calced_Freq[shift_idx]
         self.dBdw = diff_b_dw[radius_idx, shift_idx]
@@ -445,41 +449,35 @@ class VarFiber:
         self.profile = profile
         self.Raman = Raman
     
-    def Interp_omega(self,Vals):
-        return np.interp(self.W, self.Calced_Freq, Vals)
+    def Interp_omega(self,Vals, upscaling):
+        return np.interp(self.W, self.Calced_Freq*upscaling, Vals, left = np.nan, right = np.nan)
     
-    def ode_f(self, z, A, zp = False, raman = True, mode = 0, plot = False):
+    def ode_f(self, z, A, zp = False, raman = True, mode = 0, plot = False,omega_upscaling = 1):
         Rz = self.profile(z)
-        A1 = self.Interp_omega(self.A_eff_1_func(Rz)[:,mode])
-        A2 = self.Interp_omega(self.A_eff_2_func(Rz)[:,mode])
+        A1 = self.Interp_omega(self.A_eff_1_func(Rz)[:,mode], omega_upscaling)
+        A2 = self.Interp_omega(self.A_eff_2_func(Rz)[:,mode], omega_upscaling)
+        #A2 = A1.copy()
         
-        Phase_w = np.exp(1j * self.Interp_omega(self.Integrated_Phase(z)[:,mode]))
-        #Phase_w = np.exp(1j * self.Interp_omega(F.Fields_beta[0,:,0])*z)
+        
+        Phase_w = np.exp(1j * self.Interp_omega(self.Integrated_Phase(z)[:,mode], omega_upscaling))
         if plot:
             plt.plot(self.W,A1)
             plt.title(r'$A_{eff,1}$')
-            plt.ylim([0,5])
-            plt.show()
+            plt.ylim([0,5]); plt.show()
             plt.plot(self.W,A2)
             plt.title(r'$A_{eff,2}$')
-            plt.ylim([0,100])
-            plt.show()
+            plt.ylim([0,100]); plt.show()
             plt.plot(self.W, A.real)
             plt.plot(self.W, A.imag)
-            plt.title(r'$A(w)$')
-            plt.show()
+            plt.title(r'$A(w)$'); plt.show()
             plt.plot(self.W, Phase_w)
-            plt.title('Phase')
-            
+            plt.title('Phase'); plt.show()
         
-        A1[:] = 30
-        
-        
-        return JesperMail(self.W, self.chi3, self.nm, 
+        return JesperMail2(self.W, self.chi3, self.nm, 
                           A,
                           A1, A1, Phase_w, self.Raman, 
                           self.fR,zp=zp,raman=raman)
-    
+
 def sech(x):
     return 2/(np.exp(x) + np.exp(-x) )
 
@@ -489,7 +487,7 @@ FT  = sft.fft#np.fft.fft
 
 def JesperMail(w, chi3, nm,A_w, A_eff_1_w, A_eff_2_w, phase_w, raman_w, fR, zp = False, raman = True):
     fact = 1j * w * mu0 * chi3 /(4 * nm**2*np.sqrt(2 * np.pi))
-    other_fact = (w[-1]-w[0])/(2 * np.pi)
+   # other_fact = (w[-1]-w[0])/(2 * np.pi)
     dw         = w[1]-w[0] / np.sqrt(2 * np.pi)
     dt         = 2*np.pi/(len(w) * dw) / np.sqrt(2 * np.pi)
     nw = len(w)
@@ -526,8 +524,8 @@ def JesperMail(w, chi3, nm,A_w, A_eff_1_w, A_eff_2_w, phase_w, raman_w, fR, zp =
 def JesperMail2(w, chi3, nm,A_w, A_eff_1_w, A_eff_2_w, phase_w, raman_w, fR, zp = False, raman = True):
     fact = 1j * w * mu0 * chi3 /(4 * nm**2*np.sqrt(2 * np.pi))
     other_fact = (w[-1]-w[0])/(2 * np.pi)
-    dw         = w[1]-w[0] / np.sqrt(2 * np.pi)
-    dt         = 2*np.pi/(len(w) * dw) / np.sqrt(2 * np.pi)
+    #dw         = w[1]-w[0] / np.sqrt(2 * np.pi)
+    #dt         = 2*np.pi/(len(w) * dw) / np.sqrt(2 * np.pi)
     nw = len(w)
     DT = np.complex128
     A_tilde  = A_w/phase_w/np.power(A_eff_1_w, 1/4)
@@ -567,3 +565,4 @@ def R(t):
     res = np.exp(-t / tau2) * np.sin(t/tau1) * (tau1**2  + tau2**2)/(tau1*tau2**2)
     res[t<0] = 0
     return res
+
